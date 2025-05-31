@@ -162,23 +162,3 @@ export class LogRotationManager {
 
 // Default instance
 export const logRotationManager = new LogRotationManager();
-
-// Standalone script functionality
-if (require.main === module) {
-  console.log('🔄 Starting log rotation cleanup...');
-  logRotationManager.cleanupOldLogs().then(() => {
-    const stats = logRotationManager.getLogStats();
-    console.log('\n📊 Log Statistics:');
-    console.log(`   Total files: ${stats.totalFiles}`);
-    console.log(
-      `   Total size: ${stats.totalFiles > 0 ? logRotationManager['formatBytes'](stats.totalSize) : '0 Bytes'}`,
-    );
-    if (stats.oldestFile) {
-      console.log(`   Oldest file: ${stats.oldestFile.toISOString().split('T')[0]}`);
-    }
-    if (stats.newestFile) {
-      console.log(`   Newest file: ${stats.newestFile.toISOString().split('T')[0]}`);
-    }
-    console.log('✅ Log rotation completed');
-  });
-}

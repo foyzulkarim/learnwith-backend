@@ -2,6 +2,8 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { getCourseModel, CourseHelpers } from './course.model';
 import {
   Course,
+  CreateCoursePayload,
+  UpdateCoursePayload,
   CreateLessonPayload,
   CreateModulePayload,
   UpdateLessonPayload,
@@ -21,18 +23,6 @@ interface PaginatedResult<T> {
     hasNextPage: boolean;
     hasPrevPage: boolean;
   };
-}
-
-interface CreateCourseData {
-  title: string;
-  description?: string;
-  instructor?: string;
-}
-
-interface UpdateCourseData {
-  title?: string;
-  description?: string;
-  instructor?: string;
 }
 
 export class CourseService {
@@ -140,7 +130,7 @@ export class CourseService {
     } as Course;
   }
 
-  async createCourse(request: FastifyRequest, courseData: CreateCourseData): Promise<Course> {
+  async createCourse(request: FastifyRequest, courseData: CreateCoursePayload): Promise<Course> {
     request.log.info(
       {
         courseTitle: courseData.title,
@@ -154,16 +144,21 @@ export class CourseService {
     try {
       const course = await this.courseModel.create({
         title: courseData.title,
-        description: courseData.description || '',
-        instructor: courseData.instructor || '',
+        description: courseData.description,
+        thumbnailUrl: courseData.thumbnailUrl,
+        instructor: courseData.instructor,
+        instructorAvatar: courseData.instructorAvatar,
+        price: courseData.price,
+        category: courseData.category,
+        difficulty: courseData.difficulty,
         modules: [],
         totalLessons: 0,
         studentCount: 0,
         // Set default values for any missing fields
-        featured: false,
-        bestseller: false,
-        newCourse: false,
-        language: 'English',
+        featured: courseData.featured ?? false,
+        bestseller: courseData.bestseller ?? false,
+        newCourse: courseData.newCourse ?? false,
+        language: courseData.language ?? 'English',
       });
 
       request.log.info({ courseId: course._id.toString() }, 'Course created successfully');
@@ -198,7 +193,7 @@ export class CourseService {
   async updateCourse(
     request: FastifyRequest,
     courseId: string,
-    updateData: UpdateCourseData,
+    updateData: UpdateCoursePayload,
   ): Promise<Course | null> {
     request.log.info(
       {

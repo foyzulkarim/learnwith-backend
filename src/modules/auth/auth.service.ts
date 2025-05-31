@@ -132,10 +132,18 @@ export class AuthService {
     logMethod.debug({ userId: userId.substring(0, 8) + '...' }, 'Generating JWT access token');
 
     try {
+      // Get user details to include in token payload
+      const user: UserDocument | null = await this.userService.findById(userId, request);
+
+      if (!user) {
+        throw new Error('User not found when generating access token');
+      }
+
       const payload = {
-        userId,
+        id: userId, // Changed from userId to id to match UserJWTPayload interface
+        email: user.email, // Include email for authentication middleware
+        role: user.role, // Include role for authentication middleware
         type: 'access',
-        // Include user info in token for fast access without DB lookup
         iat: Math.floor(Date.now() / 1000),
       };
       const secret = config.JWT_SECRET;
@@ -189,7 +197,7 @@ export class AuthService {
 
       logMethod.debug(
         {
-          userId: decoded.userId?.substring(0, 8) + '...',
+          userId: (decoded.userId || decoded.id)?.substring(0, 8) + '...',
           tokenType,
           expiresAt: new Date(decoded.exp * 1000).toISOString(),
         },
@@ -270,8 +278,9 @@ export class AuthService {
       // Verify token
       const decoded = await this.verifyToken(accessToken, 'access', request);
 
-      // Get user details
-      const user: UserDocument | null = await this.userService.findById(decoded.userId, request);
+      // Get user details - support both old and new token formats
+      const userId = decoded.userId || decoded.id;
+      const user: UserDocument | null = await this.userService.findById(userId, request);
 
       if (!user) {
         throw new Error('User not found');

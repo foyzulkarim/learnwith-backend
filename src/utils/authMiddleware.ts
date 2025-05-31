@@ -93,17 +93,23 @@ export const authenticate = async function (
       });
     }
 
-    // 3. Validate token payload
-    if (!payload.id || !payload.email || !payload.role) {
+    // 3. Validate token payload - support both old and new formats
+    const userId = payload.id || payload.userId;
+    const userEmail = payload.email;
+    const userRole = payload.role;
+
+    // For old format tokens (missing email/role), we need to fetch from database
+    if (!userId) {
       request.log.error(
         {
           hasId: !!payload.id,
+          hasUserId: !!payload.userId,
           hasEmail: !!payload.email,
           hasRole: !!payload.role,
           sessionId: correlationContext?.sessionId,
           ...withLogglyTags(['auth', 'failure', 'payload-validation']),
         },
-        'JWT payload missing required user fields',
+        'JWT payload missing user ID',
       );
 
       return reply.status(401).send({
@@ -114,23 +120,87 @@ export const authenticate = async function (
     }
 
     // 4. Create user data from token payload
-    const userData: UserJWTPayload = {
-      id: payload.id as string,
-      email: payload.email as string,
-      role: payload.role as Role,
-      iat: payload.iat as number | undefined,
-      exp: payload.exp as number | undefined,
-    };
+    let userData: UserJWTPayload;
 
-    request.log.info(
-      {
-        userId: userData.id.substring(0, 8) + '...', // Partial user ID for tracking
-        userRole: userData.role,
-        sessionId: correlationContext?.sessionId,
-        ...withLogglyTags(['auth', 'user-context', 'created']),
-      },
-      'User context created from token',
-    );
+    if (userEmail && userRole) {
+      // New format token with all required fields
+      userData = {
+        id: userId as string,
+        email: userEmail as string,
+        role: userRole as Role,
+        iat: payload.iat as number | undefined,
+        exp: payload.exp as number | undefined,
+      };
+
+      request.log.info(
+        {
+          userId: userData.id.substring(0, 8) + '...',
+          userRole: userData.role,
+          tokenFormat: 'new',
+          sessionId: correlationContext?.sessionId,
+          ...withLogglyTags(['auth', 'user-context', 'created']),
+        },
+        'User context created from new format token',
+      );
+    } else {
+      // Old format token - need to fetch user data from database
+      try {
+        const userService = new UserService(request.server);
+        const dbUser = await userService.findById(userId as string);
+
+        if (!dbUser) {
+          request.log.warn(
+            {
+              userId: (userId as string).substring(0, 8) + '...',
+              sessionId: correlationContext?.sessionId,
+              ...withLogglyTags(['auth', 'failure', 'user-not-found']),
+            },
+            'User not found in database for old format token',
+          );
+
+          return reply.status(401).send({
+            statusCode: 401,
+            error: 'Unauthorized',
+            message: 'User account no longer exists.',
+          });
+        }
+
+        userData = {
+          id: userId as string,
+          email: dbUser.email,
+          role: dbUser.role as Role,
+          iat: payload.iat as number | undefined,
+          exp: payload.exp as number | undefined,
+        };
+
+        request.log.info(
+          {
+            userId: userData.id.substring(0, 8) + '...',
+            userRole: userData.role,
+            tokenFormat: 'old',
+            sessionId: correlationContext?.sessionId,
+            ...withLogglyTags(['auth', 'user-context', 'created']),
+          },
+          'User context created from old format token with database lookup',
+        );
+      } catch (error) {
+        request.log.error(
+          {
+            err: error,
+            userId: (userId as string).substring(0, 8) + '...',
+            sessionId: correlationContext?.sessionId,
+            ...withLogglyTags(['auth', 'failure', 'database-verification']),
+          },
+          'Database verification failed for old format token',
+        );
+
+        return reply.status(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message: 'Authentication verification failed.',
+        });
+      }
+    }
 
     // 5. Optional database verification for critical operations
     if (options?.requireFreshUser) {

@@ -25,11 +25,11 @@ export class CourseController {
       const page = (request.query as { page: number }).page || 1;
       const limit = (request.query as { limit: number }).limit || 10;
 
-      const result = await this.courseService.getAllCourses(page, limit);
+      const result = await this.courseService.getCourses(request, page, limit);
 
       return {
-        courses: result.courses,
-        total: result.total,
+        courses: result.data,
+        total: result.pagination.total,
         page,
         limit,
       };
@@ -40,6 +40,7 @@ export class CourseController {
   getCourseByIdHandler = asyncHandler(
     async (request: FastifyRequest, _reply: FastifyReply): Promise<Course> => {
       const course = await this.courseService.getCourseById(
+        request,
         (request.params as { courseId: string }).courseId,
       );
 
@@ -64,7 +65,7 @@ export class CourseController {
       if (!courseData.category) throw new ValidationError('Category is required');
       if (!courseData.difficulty) throw new ValidationError('Difficulty is required');
 
-      const newCourse = await this.courseService.createCourse(courseData);
+      const newCourse = await this.courseService.createCourse(request, courseData);
 
       reply.code(201);
       return newCourse;
@@ -77,7 +78,7 @@ export class CourseController {
       const { courseId } = request.params as { courseId: string };
       const courseData = request.body as UpdateCoursePayload;
 
-      const updatedCourse = await this.courseService.updateCourse(courseId, courseData);
+      const updatedCourse = await this.courseService.updateCourse(request, courseId, courseData);
 
       if (!updatedCourse) {
         throw new NotFoundError('Course not found');
@@ -92,7 +93,7 @@ export class CourseController {
     async (request: FastifyRequest, _reply: FastifyReply): Promise<SuccessResponse> => {
       const { courseId } = request.params as { courseId: string };
 
-      const result = await this.courseService.deleteCourse(courseId);
+      const result = await this.courseService.deleteCourse(request, courseId);
 
       if (!result) {
         throw new NotFoundError('Course not found');
@@ -102,20 +103,20 @@ export class CourseController {
     },
   );
 
-  // Curriculum Handlers
-
   // Get course curriculum
-  getCurriculumHandler = asyncHandler(async (request: FastifyRequest, _reply: FastifyReply) => {
-    const { courseId } = request.params as { courseId: string };
+  getCurriculumHandler = asyncHandler(
+    async (request: FastifyRequest, _reply: FastifyReply): Promise<Course> => {
+      const { courseId } = request.params as { courseId: string };
 
-    const curriculum = await this.courseService.getCurriculum(courseId);
+      const curriculum = await this.courseService.getCourseCurriculum(request, courseId);
 
-    if (!curriculum) {
-      throw new NotFoundError('Course not found');
-    }
+      if (!curriculum) {
+        throw new NotFoundError('Course not found');
+      }
 
-    return curriculum;
-  });
+      return curriculum;
+    },
+  );
 
   // Module Handlers
 
@@ -123,7 +124,7 @@ export class CourseController {
   getModuleHandler = asyncHandler(async (request: FastifyRequest, _reply: FastifyReply) => {
     const { courseId, moduleId } = request.params as { courseId: string; moduleId: string };
 
-    const module = await this.courseService.getModule(courseId, moduleId);
+    const module = await this.courseService.getModule(request, courseId, moduleId);
 
     if (!module) {
       throw new NotFoundError('Module not found');
@@ -142,7 +143,7 @@ export class CourseController {
     if (!moduleData.title) throw new ValidationError('Title is required');
     if (moduleData.order === undefined) throw new ValidationError('Order is required');
 
-    const newModule = await this.courseService.createModule(courseId, moduleData);
+    const newModule = await this.courseService.createModule(request, courseId, moduleData);
 
     reply.code(201);
     return newModule;
@@ -153,7 +154,12 @@ export class CourseController {
     const { courseId, moduleId } = request.params as { courseId: string; moduleId: string };
     const moduleData = request.body as UpdateModulePayload;
 
-    const updatedModule = await this.courseService.updateModule(courseId, moduleId, moduleData);
+    const updatedModule = await this.courseService.updateModule(
+      request,
+      courseId,
+      moduleId,
+      moduleData,
+    );
 
     if (!updatedModule) {
       throw new NotFoundError('Module not found');
@@ -167,7 +173,7 @@ export class CourseController {
     async (request: FastifyRequest, _reply: FastifyReply): Promise<SuccessResponse> => {
       const { courseId, moduleId } = request.params as { courseId: string; moduleId: string };
 
-      const result = await this.courseService.deleteModule(courseId, moduleId);
+      const result = await this.courseService.deleteModule(request, courseId, moduleId);
 
       if (!result) {
         throw new NotFoundError('Module not found');
@@ -187,7 +193,7 @@ export class CourseController {
       lessonId: string;
     };
 
-    const lesson = await this.courseService.getLesson(courseId, moduleId, lessonId);
+    const lesson = await this.courseService.getLesson(request, courseId, moduleId, lessonId);
 
     if (!lesson) {
       throw new NotFoundError('Lesson not found');
@@ -205,7 +211,12 @@ export class CourseController {
     if (!lessonData.title) throw new ValidationError('Title is required');
     if (lessonData.order === undefined) throw new ValidationError('Order is required');
 
-    const newLesson = await this.courseService.createLesson(courseId, moduleId, lessonData);
+    const newLesson = await this.courseService.createLesson(
+      request,
+      courseId,
+      moduleId,
+      lessonData,
+    );
 
     reply.code(201);
     return newLesson;
@@ -221,6 +232,7 @@ export class CourseController {
     const lessonData = request.body as UpdateLessonPayload;
 
     const updatedLesson = await this.courseService.updateLesson(
+      request,
       courseId,
       moduleId,
       lessonId,
@@ -243,7 +255,7 @@ export class CourseController {
         lessonId: string;
       };
 
-      const result = await this.courseService.deleteLesson(courseId, moduleId, lessonId);
+      const result = await this.courseService.deleteLesson(request, courseId, moduleId, lessonId);
 
       if (!result) {
         throw new NotFoundError('Lesson not found');

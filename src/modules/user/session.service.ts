@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { getSessionModel } from './session.model';
+import { SessionLean, SessionInfo, SessionContext } from './session.types';
 import { createServiceLogger } from '../../utils/logger';
 import { nanoid } from 'nanoid';
 
@@ -207,7 +208,7 @@ export class SessionService {
    * @param request - Optional request object for logging
    * @returns Array of active sessions
    */
-  async getUserSessions(userId: string, request?: FastifyRequest): Promise<any[]> {
+  async getUserSessions(userId: string, request?: FastifyRequest): Promise<SessionInfo[]> {
     const logMethod = request ? request.log : this.logger;
 
     try {
@@ -218,7 +219,7 @@ export class SessionService {
           expiresAt: { $gt: new Date() },
         })
         .select('deviceInfo ipAddress userAgent createdAt lastUsedAt')
-        .lean();
+        .lean<SessionLean[]>();
 
       logMethod.debug(
         {
@@ -228,14 +229,16 @@ export class SessionService {
         'Retrieved user sessions',
       );
 
-      return sessions.map((session) => ({
-        id: session._id,
-        deviceInfo: session.deviceInfo,
-        ipAddress: session.ipAddress,
-        userAgent: session.userAgent,
-        createdAt: session.createdAt,
-        lastUsedAt: session.lastUsedAt,
-      }));
+      return sessions.map(
+        (session): SessionInfo => ({
+          id: session._id.toString(),
+          deviceInfo: session.deviceInfo,
+          ipAddress: session.ipAddress,
+          userAgent: session.userAgent,
+          createdAt: session.createdAt,
+          lastUsedAt: session.lastUsedAt,
+        }),
+      );
     } catch (error) {
       logMethod.error(
         {
@@ -285,14 +288,7 @@ export class SessionService {
   async getSessionByRefreshToken(
     refreshToken: string,
     request?: FastifyRequest,
-  ): Promise<{
-    sessionId: string;
-    userId: string;
-    deviceInfo?: string;
-    ipAddress?: string;
-    createdAt: Date;
-    lastUsedAt: Date;
-  } | null> {
+  ): Promise<SessionContext | null> {
     const logMethod = request ? request.log : this.logger;
 
     try {
@@ -303,7 +299,7 @@ export class SessionService {
           expiresAt: { $gt: new Date() },
         })
         .select('userId deviceInfo ipAddress createdAt lastUsedAt')
-        .lean();
+        .lean<SessionLean>();
 
       if (!session) {
         return null;
