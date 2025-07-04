@@ -15,4 +15,6 @@ export interface User {
   role: Role;
   createdAt: Date;
   updatedAt: Date;
+  isDeleted: boolean; // Added soft delete flag
+  deletedAt: Date | null; // Added soft delete timestamp
 }

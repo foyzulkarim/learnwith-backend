@@ -5,8 +5,6 @@ import {
   UpdateUserInput,
   UserIdParamInput as UserIdParam,
   GetAllUsersQueryType, // For typing request.query
-  PaginatedUsersResponseType, // For typing the response of getAllUsers
-  UserResponseType, // For typing the response of deleteUser
 } from './user.schema';
 import { NotFoundError, ValidationError, DatabaseError } from '../../utils/errors';
 // User type for responses is implicitly handled by UserResponseType, PaginatedUsersResponseType etc.
@@ -25,7 +23,7 @@ export class UserController {
       // request.query is validated and typed by Fastify based on schema in user.route.ts
       const paginatedResult = await this.userService.getAllUsers(request.query);
       reply.code(200).send(paginatedResult);
-    } catch (error) {
+    } catch {
       // Log the error if necessary, or rely on a global error handler
       // request.log.error(error, 'Error in getAllUsersHandler');
       reply.code(500).send({ message: 'Error retrieving users.' });
@@ -67,7 +65,9 @@ export class UserController {
     reply: FastifyReply,
   ): Promise<void> {
     try {
-      const user = await this.userService.updateUser(request.params.id, request.body);
+      // Extract current user ID from authenticated request
+      const currentUserId = request.user?.id;
+      const user = await this.userService.updateUser(request.params.id, request.body, currentUserId);
       reply.code(200).send(user);
     } catch (error) {
       if (error instanceof NotFoundError) {
@@ -91,8 +91,10 @@ export class UserController {
     reply: FastifyReply,
   ): Promise<void> {
     try {
+      // Extract current user ID from authenticated request
+      const currentUserId = request.user?.id;
       // UserService.deleteUser now returns the soft-deleted user
-      const user = await this.userService.deleteUser(request.params.id);
+      const user = await this.userService.deleteUser(request.params.id, currentUserId);
       reply.code(200).send(user); // Send the updated user object as confirmation
     } catch (error) {
       if (error instanceof NotFoundError) {

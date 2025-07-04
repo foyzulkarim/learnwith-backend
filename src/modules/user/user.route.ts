@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import {
@@ -9,12 +9,11 @@ import {
   // usersResponseSchema, // Replaced by paginatedUsersResponseSchema
   getAllUsersQuerySchema, // For GET /users querystring
   paginatedUsersResponseSchema, // For GET /users response
-  UserResponseType, // For delete response, if UserResponse is not the Zod object
 } from './user.schema';
 import { authenticate, authorizeRoles } from '../../utils/authMiddleware';
 import { Role } from './types'; // Import Role for authorizeRoles
 
-export async function userRoutes(fastify: FastifyInstance) {
+export async function userRoutes(fastify: FastifyInstance): Promise<void> {
   // Instantiate service and controller
   // UserService requires FastifyInstance for logging and potentially other plugins
   const userService = new UserService(fastify);

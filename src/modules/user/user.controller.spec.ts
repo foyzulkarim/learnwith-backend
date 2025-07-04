@@ -3,13 +3,11 @@ import { UserService } from './user.service';
 import {
   // CreateUserInput, // Removed
   UpdateUserInput,
-  UserIdParamInput,
   GetAllUsersQueryType,
   PaginatedUsersResponseType,
-  UserResponseType,
 } from './user.schema';
 import { User } from './types'; // Keep for raw User type if needed for mock data
-import { NotFoundError, ValidationError, DatabaseError } from '../../utils/errors';
+import { NotFoundError } from '../../utils/errors';
 
 // Mock UserService
 jest.mock('./user.service');
@@ -17,8 +15,18 @@ jest.mock('./user.service');
 describe('UserController', () => {
   let userController: UserController;
   let mockUserService: jest.Mocked<UserService>;
-  let mockRequest: any; // Define more specific types if preferred
-  let mockReply: any;   // Define more specific types if preferred
+  let mockRequest: {
+    body: unknown;
+    params: { id?: string };
+    query: unknown;
+    log: { info: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock };
+    user?: { id: string };
+  };
+  let mockReply: {
+    code: jest.Mock;
+    send: jest.Mock;
+    status: jest.Mock;
+  };
 
   const testUser: User = {
     id: 'testId',
@@ -30,13 +38,12 @@ describe('UserController', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     googleId: null,
-    password: 'hashedPassword', // Usually not returned, but good for type completeness in tests
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockUserService = new (UserService as any)(null) as jest.Mocked<UserService>;
+    mockUserService = new UserService({} as never) as jest.Mocked<UserService>;
     // Manually mock all methods that will be called by the controller
     // mockUserService.createUser = jest.fn(); // Removed
     mockUserService.getAllUsers = jest.fn();
@@ -125,15 +132,17 @@ describe('UserController', () => {
     it('should return 200 and updated user on success', async () => {
       mockRequest.params = { id: userId };
       mockRequest.body = updateData;
+      mockRequest.user = { id: 'currentUserId' }; // Add user context
       mockUserService.updateUser.mockResolvedValue(updatedUser);
       await userController.updateUserHandler(mockRequest, mockReply);
-      expect(mockUserService.updateUser).toHaveBeenCalledWith(userId, updateData);
+      expect(mockUserService.updateUser).toHaveBeenCalledWith(userId, updateData, 'currentUserId');
       expect(mockReply.code).toHaveBeenCalledWith(200);
       expect(mockReply.send).toHaveBeenCalledWith(updatedUser);
     });
     it('should return 404 if service throws NotFoundError', async () => {
       mockRequest.params = { id: userId };
       mockRequest.body = updateData;
+      mockRequest.user = { id: 'currentUserId' }; // Add user context
       mockUserService.updateUser.mockRejectedValue(new NotFoundError('Not found'));
       await userController.updateUserHandler(mockRequest, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(404);
@@ -141,6 +150,7 @@ describe('UserController', () => {
      it('should return 500 on other service errors', async () => {
       mockRequest.params = { id: userId };
       mockRequest.body = updateData;
+      mockRequest.user = { id: 'currentUserId' }; // Add user context
       mockUserService.updateUser.mockRejectedValue(new Error('DB error'));
       await userController.updateUserHandler(mockRequest, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(500);
@@ -154,20 +164,23 @@ describe('UserController', () => {
     const softDeletedUser: User = { ...testUser, isDeleted: true, deletedAt: new Date() };
     it('should return 200 and soft-deleted user object on success', async () => {
       mockRequest.params = { id: userId };
+      mockRequest.user = { id: 'currentUserId' }; // Add user context
       mockUserService.deleteUser.mockResolvedValue(softDeletedUser);
       await userController.deleteUserHandler(mockRequest, mockReply);
-      expect(mockUserService.deleteUser).toHaveBeenCalledWith(userId);
+      expect(mockUserService.deleteUser).toHaveBeenCalledWith(userId, 'currentUserId');
       expect(mockReply.code).toHaveBeenCalledWith(200);
       expect(mockReply.send).toHaveBeenCalledWith(softDeletedUser); // Service returns the user
     });
     it('should return 404 if service throws NotFoundError', async () => {
       mockRequest.params = { id: userId };
+      mockRequest.user = { id: 'currentUserId' }; // Add user context
       mockUserService.deleteUser.mockRejectedValue(new NotFoundError('Not found'));
       await userController.deleteUserHandler(mockRequest, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(404);
     });
     it('should return 500 on other service errors', async () => {
       mockRequest.params = { id: userId };
+      mockRequest.user = { id: 'currentUserId' }; // Add user context
       mockUserService.deleteUser.mockRejectedValue(new Error('DB error'));
       await userController.deleteUserHandler(mockRequest, mockReply);
       expect(mockReply.code).toHaveBeenCalledWith(500);

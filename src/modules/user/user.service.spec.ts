@@ -3,7 +3,7 @@ import { getUserModel } from './user.model';
 // import { hashPassword } from '../../utils/hash'; // Removed
 import { UpdateUserInput, UserRole, GetAllUsersQueryType } from './user.schema'; // CreateUserInput removed
 import { User } from './types';
-import { DatabaseError, NotFoundError, ValidationError } from '../../utils/errors';
+import { DatabaseError, NotFoundError } from '../../utils/errors';
 
 // Mock dependencies
 jest.mock('./user.model');
@@ -21,7 +21,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 // Enhanced mock for chained query builders
-const mockQueryBuilder = (resolvedValue: any) => ({
+const mockQueryBuilder = (resolvedValue: unknown): Record<string, jest.Mock> => ({
   sort: jest.fn().mockReturnThis(),
   skip: jest.fn().mockReturnThis(),
   limit: jest.fn().mockReturnThis(),
@@ -31,7 +31,7 @@ const mockQueryBuilder = (resolvedValue: any) => ({
 
 const mockUserModel = {
   create: jest.fn(),
-  find: jest.fn().mockImplementation((conditions) => mockQueryBuilder([])), // Default to empty array
+  find: jest.fn().mockImplementation((_conditions) => mockQueryBuilder([])), // Default to empty array
   findById: jest.fn(),
   findOne: jest.fn(),
   // findByIdAndUpdate: jest.fn(), // Not directly used, updates are findOne -> save
@@ -39,7 +39,7 @@ const mockUserModel = {
   countDocuments: jest.fn().mockResolvedValue(0), // Default count
 };
 
-const mockUserDoc = (data: Partial<User & { _id: string, isDeleted?: boolean, deletedAt?: Date | null }>) => {
+const mockUserDoc = (data: Partial<User & { _id: string, isDeleted?: boolean, deletedAt?: Date | null }>): Record<string, unknown> => {
   const fullData = {
     _id: data.id || `mockId_${Math.random()}`,
     email: data.email || 'test@example.com',
@@ -66,7 +66,9 @@ const mockUserDoc = (data: Partial<User & { _id: string, isDeleted?: boolean, de
 
 describe('UserService', () => {
   let userService: UserService;
-  let mockFastify: any;
+  let mockFastify: {
+    log: { info: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock };
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -90,8 +92,8 @@ describe('UserService', () => {
         updatedAt: now,
       };
       const userDoc = { toObject: jest.fn().mockReturnValue(userDocData) };
-      // @ts-ignore
-      const result = userService.convertToUser(userDoc as any);
+      // @ts-expect-error - Testing with mock document structure
+      const result = userService.convertToUser(userDoc);
       expect(result).toEqual(expect.objectContaining({
         id: 'mongoId123',
         email: 'test@example.com',
@@ -105,8 +107,8 @@ describe('UserService', () => {
     it('should default isDeleted to false and deletedAt to null if not present', () => {
        const userDocData = { _id: 'mongoId123', email: 'test@example.com', role: 'viewer', createdAt: new Date(), updatedAt: new Date() };
        const userDoc = { toObject: jest.fn().mockReturnValue(userDocData) };
-       // @ts-ignore
-       const result = userService.convertToUser(userDoc as any);
+       // @ts-expect-error - Testing with mock document structure
+       const result = userService.convertToUser(userDoc);
        expect(result.isDeleted).toBe(false);
        expect(result.deletedAt).toBeNull();
     });
@@ -129,7 +131,7 @@ describe('UserService', () => {
           if (conditions.isDeleted !== undefined && user.isDeleted !== conditions.isDeleted) match = false;
           if (conditions.role && user.role !== conditions.role) match = false;
           if (conditions.$or) {
-            const orMatch = conditions.$or.some((orCond: any) => {
+            const orMatch = conditions.$or.some((orCond: unknown) => {
               if (orCond.name && orCond.name.$regex) return orCond.name.$regex.test(user.name);
               if (orCond.email && orCond.email.$regex) return orCond.email.$regex.test(user.email);
               return false;
@@ -151,7 +153,7 @@ describe('UserService', () => {
           if (conditions.isDeleted !== undefined && user.isDeleted !== conditions.isDeleted) return false;
           if (conditions.role && user.role !== conditions.role) return false;
            if (conditions.$or) {
-            return conditions.$or.some((orCond: any) => {
+            return conditions.$or.some((orCond: unknown) => {
               if (orCond.name && orCond.name.$regex) return orCond.name.$regex.test(user.name);
               if (orCond.email && orCond.email.$regex) return orCond.email.$regex.test(user.email);
               return false;
@@ -288,7 +290,6 @@ describe('UserService', () => {
     const userId = 'userToUpdate';
     const updateData: UpdateUserInput = { name: 'New Name' };
     const existingUser = mockUserDoc({ id: userId, isDeleted: false });
-    const deletedUser = mockUserDoc({ id: userId, isDeleted: true });
 
     it('should update a non-deleted user', async () => {
       mockUserModel.findOne.mockResolvedValue(existingUser); // For the isDeleted:false check
@@ -331,7 +332,6 @@ describe('UserService', () => {
   describe('findOrCreateUserByGoogleProfile', () => {
     const googleProfile = { sub: 'google123', email: 'google@example.com', name: 'Google User' };
     const existingNonDeletedUser = mockUserDoc({ googleId: 'google123', email: 'google@example.com', isDeleted: false });
-    const existingDeletedUser = mockUserDoc({ email: 'google@example.com', isDeleted: true });
 
     it('should find non-deleted user by googleId', async () => {
       mockUserModel.findOne.mockImplementation(query => {

@@ -1,10 +1,9 @@
 import { z } from 'zod';
 
-// Enum for user roles - assuming ROLES is an array like ['admin', 'editor', 'viewer']
-// For Zod enum, we need to provide at least one value, and then more.
-// If ROLES is imported from types.ts, ensure it's compatible or define it here.
-// For now, using the existing UserRole definition.
-export const UserRole = z.enum(['admin', 'editor', 'viewer']);
+// Enum for user roles - keeping consistent with types.ts
+// Import ROLES from types.ts to ensure consistency
+import { ROLES } from './types';
+export const UserRole = z.enum(ROLES as [string, ...string[]]);
 export type UserRoleType = z.infer<typeof UserRole>; // Exporting the type for use in search query
 
 // --- Core User Schemas ---

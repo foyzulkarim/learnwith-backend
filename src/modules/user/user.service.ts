@@ -2,6 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { User } from './types';
 import { getUserModel, UserDocument } from './user.model';
+import { ObjectId } from 'mongodb';
 import {
   // CreateUserInput, // Removed as createUser method is deleted
   UpdateUserInput,
@@ -38,6 +39,18 @@ export class UserService {
   }
 
   /**
+   * Validates if a string is a valid MongoDB ObjectId
+   * @param id - The string to validate
+   * @param paramName - The parameter name for error messages
+   * @throws ValidationError if the ID is invalid
+   */
+  private validateObjectId(id: string, paramName: string = 'id'): void {
+    if (!ObjectId.isValid(id)) {
+      throw new ValidationError(`Invalid ${paramName} format. Must be a valid MongoDB ObjectId.`, 'INVALID_OBJECT_ID');
+    }
+  }
+
+  /**
    * Retrieves a paginated, sorted, and filtered list of users.
    */
   async getAllUsers(options: GetAllUsersQueryType): Promise<PaginatedUsersResponseType> {
@@ -53,10 +66,12 @@ export class UserService {
         isDeleted = false, // Default to not showing deleted users unless explicitly requested
       } = options;
 
-      const queryConditions: any = { isDeleted };
+      const queryConditions: Record<string, unknown> = { isDeleted };
 
       if (search) {
-        const searchRegex = new RegExp(search, 'i');
+        // Sanitize search input to prevent regex injection
+        const sanitizedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const searchRegex = new RegExp(sanitizedSearch, 'i');
         queryConditions.$or = [{ name: searchRegex }, { email: searchRegex }];
       }
 
@@ -66,7 +81,7 @@ export class UserService {
 
       this.logger.info({ operation: 'UserService.getAllUsers', step: 'query_construction', queryConditions }, 'Constructed query conditions');
 
-      const sortOptions: any = {};
+      const sortOptions: Record<string, 1 | -1> = {};
       sortOptions[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
       const skip = (page - 1) * limit;
@@ -101,7 +116,10 @@ export class UserService {
   async getUserById(id: string, includeDeleted: boolean = false): Promise<User | null> {
     const logContext = this.logger.startOperation('UserService.getUserById', { userId: id, includeDeleted });
     try {
-      const queryConditions: any = { _id: id };
+      // Validate ObjectId format first
+      this.validateObjectId(id, 'userId');
+      
+      const queryConditions: Record<string, unknown> = { _id: new ObjectId(id) };
       if (!includeDeleted) {
         queryConditions.isDeleted = false;
       }
@@ -130,17 +148,30 @@ export class UserService {
   /**
    * Updates an existing non-deleted user.
    * Does not allow updating isDeleted or deletedAt.
+   * Includes protection against self-modification risks.
    */
-  async updateUser(id: string, updateData: UpdateUserInput): Promise<User> {
+  async updateUser(id: string, updateData: UpdateUserInput, currentUserId?: string): Promise<User> {
     const logContext = this.logger.startOperation('UserService.updateUser', { userId: id, updateData });
     try {
+      // Validate ObjectId format first
+      this.validateObjectId(id, 'userId');
+      
       this.logger.info({ /* ... */ }, 'Finding non-deleted user to update');
       // Ensure we only update non-deleted users
-      const userDoc = await this.userModel.findOne({ _id: id, isDeleted: false });
+      const userDoc = await this.userModel.findOne({ _id: new ObjectId(id), isDeleted: false });
 
       if (!userDoc) {
         this.logger.warn({ /* ... */ }, `Non-deleted user not found for update: ${id}`);
         throw new NotFoundError(`User with ID ${id} not found or has been deleted.`);
+      }
+
+      // Self-modification protection
+      if (currentUserId && userDoc._id.toString() === currentUserId) {
+        if (updateData.role !== undefined && updateData.role !== userDoc.role) {
+          // Prevent users from changing their own role
+          this.logger.warn({ userId: id, currentUserId, oldRole: userDoc.role, newRole: updateData.role }, 'Attempted self-role modification blocked');
+          throw new ValidationError('Users cannot modify their own role.', 'SELF_ROLE_MODIFICATION_FORBIDDEN');
+        }
       }
 
       if (updateData.name !== undefined) userDoc.name = updateData.name;
@@ -165,18 +196,28 @@ export class UserService {
 
   /**
    * Soft deletes a user by their ID.
+   * Includes protection against self-deletion.
    */
-  async deleteUser(id: string): Promise<User> { // Changed return type
+  async deleteUser(id: string, currentUserId?: string): Promise<User> { // Changed return type
     const logContext = this.logger.startOperation('UserService.deleteUser', { userId: id });
     try {
+      // Validate ObjectId format first
+      this.validateObjectId(id, 'userId');
+      
       this.logger.info({ /* ... */ }, 'Finding user to soft delete');
       // Check if user exists and is not already deleted.
       // If you want to allow "re-deleting" a deleted user (just updating deletedAt), remove isDeleted: false.
-      const userDoc = await this.userModel.findOne({ _id: id, isDeleted: false });
+      const userDoc = await this.userModel.findOne({ _id: new ObjectId(id), isDeleted: false });
 
       if (!userDoc) {
         this.logger.warn({ /* ... */ }, `User not found or already deleted: ${id}`);
         throw new NotFoundError(`User with ID ${id} not found or already deleted.`);
+      }
+
+      // Self-deletion protection
+      if (currentUserId && userDoc._id.toString() === currentUserId) {
+        this.logger.warn({ userId: id, currentUserId }, 'Attempted self-deletion blocked');
+        throw new ValidationError('Users cannot delete their own account.', 'SELF_DELETION_FORBIDDEN');
       }
 
       userDoc.isDeleted = true;
@@ -265,7 +306,6 @@ export class UserService {
       name: userObject.name || null,
       googleId: userObject.googleId || null,
       role: userObject.role || 'viewer',
-      password: userObject.password || null, // Typically null in responses unless specifically needed
       createdAt: userObject.createdAt,
       updatedAt: userObject.updatedAt,
       isDeleted: userObject.isDeleted ?? false, // Default to false if undefined
@@ -279,10 +319,13 @@ export class UserService {
   async restoreUser(id: string): Promise<User> {
     const logContext = this.logger.startOperation('UserService.restoreUser', { userId: id });
     try {
+      // Validate ObjectId format first
+      this.validateObjectId(id, 'userId');
+      
       this.logger.info({ operation: 'UserService.restoreUser', step: 'finding_deleted_user', userId: id }, 'Finding soft-deleted user to restore');
 
       // Find a user that is specifically marked as deleted
-      const userDoc = await this.userModel.findOne({ _id: id, isDeleted: true });
+      const userDoc = await this.userModel.findOne({ _id: new ObjectId(id), isDeleted: true });
 
       if (!userDoc) {
         this.logger.warn({ operation: 'UserService.restoreUser', userId: id, found: false }, `Soft-deleted user not found or user is not deleted: ${id}`);

@@ -21,7 +21,6 @@ const UserSchema = new Schema<UserDocument>(
       required: true,
       index: true, // Added index
     },
-    password: { type: String }, // Added password field
 
     // Soft delete fields
     isDeleted: { type: Boolean, default: false, index: true },
@@ -47,7 +46,7 @@ UserSchema.index({ isDeleted: 1, role: 1 });
                                                 // unless specific performance issues arise.
 
 // Create and export model (or export the function to create the model)
-export const getUserModel = () => {
+export const getUserModel = (): mongoose.Model<UserDocument> => {
   // Check if model already exists to prevent model overwrite error
   return mongoose.models.User || mongoose.model<UserDocument>('User', UserSchema);
 };
