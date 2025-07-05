@@ -67,7 +67,10 @@ export const getNotificationsSchema: FastifySchema = {
                   type: { type: 'string', enum: ['new_video', 'course_update', 'system'] },
                   title: { type: 'string' },
                   message: { type: 'string' },
-                  metadata: { type: 'object' },
+                  metadata: {
+                    type: 'object',
+                    additionalProperties: true,
+                  },
                   createdAt: { type: 'string', format: 'date-time' },
                   isRead: { type: 'boolean' },
                   readAt: { type: 'string', format: 'date-time' },

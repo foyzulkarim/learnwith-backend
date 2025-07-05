@@ -102,64 +102,97 @@ export class NotificationService {
   ): Promise<NotificationResponse> {
     try {
       const skip = (page - 1) * limit;
+      const userObjectId = new mongoose.Types.ObjectId(userId);
 
-      // Aggregate to join notifications with user notification status
-      const pipeline: any[] = [
-        {
-          $match: { userId: new mongoose.Types.ObjectId(userId) },
-        },
-        {
-          $lookup: {
-            from: 'notifications',
-            localField: 'notificationId',
-            foreignField: '_id',
-            as: 'notification',
-          },
-        },
-        {
-          $unwind: '$notification',
-        },
-        {
-          $sort: { createdAt: -1 },
-        },
-        {
-          $facet: {
-            notifications: [
-              { $skip: skip },
-              { $limit: limit },
-              {
-                $project: {
-                  _id: '$notification._id',
-                  type: '$notification.type',
-                  title: '$notification.title',
-                  message: '$notification.message',
-                  metadata: '$notification.metadata',
-                  createdAt: '$notification.createdAt',
-                  isRead: '$isRead',
-                  readAt: '$readAt',
-                },
-              },
-            ],
-            totalCount: [{ $count: 'count' }],
-          },
-        },
-      ];
+      // First query: Get total count of user notifications
+      const totalCount = await UserNotification.countDocuments({
+        userId: userObjectId,
+      });
 
-      const result = await UserNotification.aggregate(pipeline);
-      const notifications = result[0].notifications || [];
-      const total = result[0].totalCount[0]?.count || 0;
-      const hasMore = skip + notifications.length < total;
+      // Second query: Get paginated user notifications with read status
+      const userNotifications = await UserNotification.find(
+        { userId: userObjectId },
+        { notificationId: 1, isRead: 1, readAt: 1, createdAt: 1, _id: 0 },
+      )
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
 
+      if (userNotifications.length === 0) {
+        return {
+          notifications: [],
+          total: totalCount,
+          hasMore: totalCount > skip + limit,
+          page,
+          limit,
+        };
+      }
+
+      // Extract notification IDs and create a map for read status
+      const notificationIds = userNotifications.map((un) => un.notificationId);
+      const readStatusMap = new Map(
+        userNotifications.map((un) => [
+          un.notificationId.toString(),
+          { isRead: un.isRead, readAt: un.readAt },
+        ]),
+      );
+
+      // Third query: Get the actual notification details
+      const notifications = await Notification.find({ _id: { $in: notificationIds } }).lean();
+
+      // Transform notifications and manually convert ObjectIds to strings
+      const transformedNotifications = notificationIds
+        .map((id) => {
+          const notification = notifications.find((n) => n._id.toString() === id.toString());
+          const readStatus = readStatusMap.get(id.toString());
+
+          if (!notification) {
+            return null;
+          }
+
+          // Manual transformation of ObjectIds in metadata to strings
+          const transformedMetadata: any = { ...notification.metadata };
+          if (transformedMetadata) {
+            if (transformedMetadata.courseId) {
+              transformedMetadata.courseId = transformedMetadata.courseId.toString();
+            }
+            if (transformedMetadata.moduleId) {
+              transformedMetadata.moduleId = transformedMetadata.moduleId.toString();
+            }
+            if (transformedMetadata.videoId) {
+              transformedMetadata.videoId = transformedMetadata.videoId.toString();
+            }
+            // Keep other fields as-is (courseName, videoTitle, isExternal, externalUrl)
+          }
+
+          return {
+            _id: notification._id.toString(),
+            type: notification.type,
+            title: notification.title,
+            message: notification.message,
+            metadata: transformedMetadata,
+            createdAt: notification.createdAt,
+            isGlobal: notification.isGlobal,
+            targetUsers: notification.targetUsers,
+            isRead: readStatus?.isRead || false,
+            readAt: readStatus?.readAt || undefined,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null); // Remove any null entries
+
+      const hasMore = totalCount > skip + limit;
+      console.log(transformedNotifications);
       return {
-        notifications,
-        total,
+        notifications: transformedNotifications,
+        total: totalCount,
         hasMore,
         page,
         limit,
       };
     } catch (error) {
-      console.error('Failed to fetch notifications:', error);
-      throw new AppError('Failed to fetch notifications', 500);
+      console.error('Error fetching user notifications:', error);
+      throw new Error('Failed to fetch notifications');
     }
   }
 
@@ -237,6 +270,7 @@ export class NotificationService {
   async createVideoNotification(
     courseId: string,
     courseName: string,
+    moduleId: string,
     videoId: string,
     videoTitle: string,
   ): Promise<void> {
@@ -245,10 +279,12 @@ export class NotificationService {
       title: 'New Video Available',
       message: `A new video "${videoTitle}" has been added to the course "${courseName}".`,
       metadata: {
-        courseId: new mongoose.Types.ObjectId(courseId),
-        videoId: new mongoose.Types.ObjectId(videoId),
+        courseId,
+        moduleId,
+        videoId,
         courseName,
         videoTitle,
+        isExternal: false,
       },
       isGlobal: true,
     });

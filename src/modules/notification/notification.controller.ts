@@ -29,10 +29,11 @@ export class NotificationController {
 
       const result = await notificationService.getUserNotifications(userId, page, limit);
 
-      return reply.code(200).send({
+      const responseData = {
         success: true,
         data: result,
-      });
+      };
+      return reply.code(200).send(responseData);
     } catch (error) {
       request.log.error('Error fetching notifications:', error);
 

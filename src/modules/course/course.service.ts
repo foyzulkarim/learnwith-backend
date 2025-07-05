@@ -747,6 +747,7 @@ export class CourseService {
         await notificationService.createVideoNotification(
           courseId,
           course.title,
+          moduleId,
           newLesson._id.toString(),
           newLesson.title,
         );

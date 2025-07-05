@@ -6,15 +6,18 @@ export interface INotification {
   title: string;
   message: string;
   metadata: {
-    courseId?: mongoose.Types.ObjectId;
-    videoId?: mongoose.Types.ObjectId;
+    courseId?: string;
+    moduleId?: string;
+    videoId?: string;
     courseName?: string;
     videoTitle?: string;
+    isExternal?: boolean;
+    externalUrl?: string;
     [key: string]: any;
   };
   createdAt: Date;
   isGlobal: boolean;
-  targetUsers?: mongoose.Types.ObjectId[];
+  targetUsers?: string[];
 }
 
 export interface IUserNotification {

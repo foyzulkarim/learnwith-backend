@@ -29,6 +29,9 @@ const notificationSchema = new Schema<NotificationDocument>(
         type: Schema.Types.ObjectId,
         ref: 'Course',
       },
+      moduleId: {
+        type: Schema.Types.ObjectId,
+      },
       videoId: {
         type: Schema.Types.ObjectId,
       },
@@ -37,6 +40,14 @@ const notificationSchema = new Schema<NotificationDocument>(
         trim: true,
       },
       videoTitle: {
+        type: String,
+        trim: true,
+      },
+      isExternal: {
+        type: Boolean,
+        default: false,
+      },
+      externalUrl: {
         type: String,
         trim: true,
       },
@@ -56,6 +67,17 @@ const notificationSchema = new Schema<NotificationDocument>(
   {
     timestamps: true,
     collection: 'notifications',
+    toJSON: {
+      transform: function (doc, ret) {
+        // Convert ObjectIds in metadata to strings
+        if (ret.metadata) {
+          if (ret.metadata.courseId) ret.metadata.courseId = ret.metadata.courseId.toString();
+          if (ret.metadata.moduleId) ret.metadata.moduleId = ret.metadata.moduleId.toString();
+          if (ret.metadata.videoId) ret.metadata.videoId = ret.metadata.videoId.toString();
+        }
+        return ret;
+      },
+    },
   },
 );
 
