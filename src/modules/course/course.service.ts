@@ -737,6 +737,25 @@ export class CourseService {
   async createLesson(courseId: string, moduleId: string, lessonData: CreateLessonPayload) {
     const newLesson = await CourseHelpers.addLesson(courseId, moduleId, lessonData);
     if (!newLesson) throw new NotFoundError('Failed to create lesson');
+
+    // Create notification for new video/lesson
+    try {
+      // Get course details for notification
+      const course = await this.getCourseById(courseId);
+      if (course) {
+        const { notificationService } = await import('../notification/notification.service');
+        await notificationService.createVideoNotification(
+          courseId,
+          course.title,
+          newLesson._id.toString(),
+          newLesson.title,
+        );
+      }
+    } catch (error) {
+      // Log error but don't fail lesson creation
+      console.error('Failed to create notification for new lesson:', error);
+    }
+
     return newLesson;
   }
 
